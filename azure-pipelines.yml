@@ -1,0 +1,75 @@
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+    - master
+  tags:
+    include:
+    - v*
+
+pool:
+  name: 'Default'
+
+steps:
+- checkout: self
+  submodules: true
+  fetchTags: true
+  fetchDepth: 0
+
+- task: gitversion/setup@0
+  displayName: Setup GitVersion
+  inputs:
+    versionSpec: '5.x'
+
+- task: gitversion/execute@0
+  displayName: Execute GitVersion
+  inputs:
+    additionalArguments: '/output BuildServer'
+
+- task: UseDotNet@2
+  displayName: 'Use .NET 7 SDK'
+  inputs:
+    packageType: 'sdk'
+    version: '7.x'
+
+- task: NuGetAuthenticate@0
+
+- task: DotNetCoreCLI@2
+  displayName: Restore
+  inputs:
+    command: 'restore'
+    feedsToUse: 'select'
+    vstsFeed: '640f77ba-a1d6-45f8-a237-2fff94af3f1d'
+
+- task: DotNetCoreCLI@2
+  displayName: Build
+  inputs:
+    command: 'build'
+    arguments: '-c $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: Test
+  inputs:
+    command: 'test'
+    arguments: '-c $(buildConfiguration) --collect:"XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura'
+    publishTestResults: true
+    nobuild: true
+
+- task: DotNetCoreCLI@2
+  displayName: Stage Artifacts
+  inputs:
+    command: publish
+    arguments: '-c $(buildConfiguration) -p:UseAppHost=false -o $(Build.ArtifactStagingDirectory)'
+    projects: 'KeyVault.Acmebot'
+    publishWebProjects: false
+    nobuild: true
+    versioningScheme: byEnvVar
+    versionEnvVar: 'GitVersion.NuGetVersion'
+    verbosityPack: Normal
+
+- task: PublishPipelineArtifact@1
+  displayName: Publish Artifacts
+  inputs:
+    targetPath: '$(Build.ArtifactStagingDirectory)'
+    publishLocation: 'pipeline'
